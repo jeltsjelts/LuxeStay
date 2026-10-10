@@ -7,7 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv()
+# Carrega o .env a partir do diretório raiz do projeto
+BASE_DIR = Path(__file__).resolve().parent.parent
+env_path = BASE_DIR / ".env"
+
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+else:
+    load_dotenv()
 
 HOTEL_AGENT_ENDPOINT = os.getenv("HOTEL_AGENT_ENDPOINT")
 HOTEL_AGENT_API_KEY = os.getenv("HOTEL_AGENT_API_KEY")
@@ -23,8 +30,7 @@ app.add_middleware(
 )
 
 # Caminho do ficheiro HTML
-BASE_DIR = Path(__file__).resolve().parent
-HTML_PATH = BASE_DIR / "templates" / "index.html"
+HTML_PATH = Path(__file__).resolve().parent / "templates" / "index.html"
 
 if not HTML_PATH.exists():
     HTML_PATH = Path("app/templates/index.html")
@@ -58,6 +64,12 @@ async def conversar_com_agente(
             detail="HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY nao estao definidos no .env"
         )
 
+    # --- INJEÇÃO AUTOMÁTICA DA API-VERSION NO ENDPOINT ---
+    endpoint_url = HOTEL_AGENT_ENDPOINT
+    if "api-version=" not in endpoint_url:
+        delimiter = "&" if "?" in endpoint_url else "?"
+        endpoint_url = f"{endpoint_url}{delimiter}api-version=2024-05-01-preview"
+
     # Cabeçalhos de autenticação do Azure AI Foundry / Agent Service
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
@@ -67,21 +79,18 @@ async def conversar_com_agente(
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
-            # 1. Tentativa com payload de Responses API / Prompt
             payload = {
                 "input": mensagem or "Olá",
                 "messages": [{"role": "user", "content": mensagem or "Olá"}]
             }
 
             response = await client.post(
-                HOTEL_AGENT_ENDPOINT,
+                endpoint_url,
                 json=payload,
                 headers=headers
             )
 
-            # Tratamento de erro retornado pela API da Microsoft
             if response.status_code != 200:
-                # Retorna o erro exato do Azure para podermos ver na tela do chat
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Erro no Azure ({response.status_code}): {response.text}"
