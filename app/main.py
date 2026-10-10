@@ -67,9 +67,9 @@ async def conversar_com_agente(
         delimiter = "&" if "?" in endpoint_url else "?"
         endpoint_url = f"{endpoint_url}{delimiter}api-version=2025-11-15-preview"
 
+# Cabeçalho oficial e exclusivo para chaves da API do Azure AI Foundry
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
-        "Authorization": f"Bearer {HOTEL_AGENT_API_KEY}",
         "Content-Type": "application/json"
     }
 
@@ -86,14 +86,10 @@ async def conversar_com_agente(
                 headers=headers
             )
 
-            # Fallback se o endpoint pedir query alternativa
-            if response.status_code == 400 and "API version" in response.text:
-                # Tenta com api-version=v1 caso a conta use a rota estática v1
-                alt_url = HOTEL_AGENT_ENDPOINT.split("?")[0] + "?api-version=v1"
-                response = await client.post(
-                    alt_url,
-                    json=payload,
-                    headers=headers
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Erro no Azure ({response.status_code}): {response.text}"
                 )
 
             if response.status_code != 200:
