@@ -61,11 +61,11 @@ async def conversar_com_agente(
             detail="HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY nao estao definidos no .env"
         )
 
-    # Usa a versão oficial 2024-02-15-preview
+    # Injeta a api-version correta para a API de Agentes (2025-11-15-preview)
     endpoint_url = HOTEL_AGENT_ENDPOINT
     if "api-version=" not in endpoint_url:
         delimiter = "&" if "?" in endpoint_url else "?"
-        endpoint_url = f"{endpoint_url}{delimiter}api-version=2024-02-15-preview"
+        endpoint_url = f"{endpoint_url}{delimiter}api-version=2025-11-15-preview"
 
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
@@ -77,7 +77,7 @@ async def conversar_com_agente(
         async with httpx.AsyncClient(timeout=45.0) as client:
             payload = {
                 "input": mensagem or "Olá",
-                "messages": [{"role": "user", "content": mensagem or "Olá"}]
+                "stream": False
             }
 
             response = await client.post(
@@ -85,6 +85,16 @@ async def conversar_com_agente(
                 json=payload,
                 headers=headers
             )
+
+            # Fallback se o endpoint pedir query alternativa
+            if response.status_code == 400 and "API version" in response.text:
+                # Tenta com api-version=v1 caso a conta use a rota estática v1
+                alt_url = HOTEL_AGENT_ENDPOINT.split("?")[0] + "?api-version=v1"
+                response = await client.post(
+                    alt_url,
+                    json=payload,
+                    headers=headers
+                )
 
             if response.status_code != 200:
                 raise HTTPException(
