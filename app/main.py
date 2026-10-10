@@ -2,12 +2,11 @@ import os
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException, status, Form, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
 
-# Carrega as variáveis do .env
 load_dotenv()
 
 HOTEL_AGENT_ENDPOINT = os.getenv("HOTEL_AGENT_ENDPOINT")
@@ -23,23 +22,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Descobre o caminho correto do arquivo HTML no container/servidor
+# Caminho do ficheiro HTML
 BASE_DIR = Path(__file__).resolve().parent
-html_file_path = BASE_DIR / "templates" / "index.html"
+HTML_PATH = BASE_DIR / "templates" / "index.html"
 
-# Fallback de caminho caso a estrutura de pastas mude no Render
-if not html_file_path.exists():
-    html_file_path = Path("app/templates/index.html")
+if not HTML_PATH.exists():
+    HTML_PATH = Path("app/templates/index.html")
 
-@app.get("/", response_class=FileResponse)
+@app.get("/", response_class=HTMLResponse)
 async def home():
-    """Serve a página HTML diretamente, eliminando incompatibilidades do Jinja2."""
-    if not html_file_path.exists():
+    """Lê e retorna o HTML diretamente sem usar templates Jinja2."""
+    if not HTML_PATH.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Arquivo HTML não encontrado no caminho: {html_file_path}"
+            detail=f"Ficheiro index.html nao encontrado em: {HTML_PATH}"
         )
-    return FileResponse(html_file_path)
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
 
 @app.post("/api/v1/chat")
 async def conversar_com_agente(
@@ -49,13 +49,13 @@ async def conversar_com_agente(
     if not mensagem and not arquivo:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Envie uma mensagem de texto ou arquivo."
+            detail="Envie uma mensagem de texto ou ficheiro."
         )
 
     if not HOTEL_AGENT_ENDPOINT or not HOTEL_AGENT_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Variáveis HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY não foram encontradas no .env."
+            detail="HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY nao estao definidos no .env"
         )
 
     headers = {
@@ -66,8 +66,6 @@ async def conversar_com_agente(
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
-            
-            # Payload para a API do Azure Foundry Responses
             payload = {
                 "input": mensagem or "Olá",
                 "stream": False
@@ -79,7 +77,6 @@ async def conversar_com_agente(
                 headers=headers
             )
 
-            # Fallback para o formato 'messages' caso o endpoint exija
             if response.status_code == 400:
                 payload_fallback = {
                     "messages": [{"role": "user", "content": mensagem or "Olá"}]
@@ -93,12 +90,11 @@ async def conversar_com_agente(
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Erro no agente Azure ({response.status_code}): {response.text}"
+                    detail=f"Erro Azure ({response.status_code}): {response.text}"
                 )
 
             res_json = response.json()
             
-            # Extração flexível da resposta recebida
             resposta_texto = None
             if "output" in res_json:
                 resposta_texto = res_json["output"]
@@ -114,7 +110,7 @@ async def conversar_com_agente(
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Tempo limite excedido ao comunicar com o Azure Foundry."
+            detail="Timeout na ligacao com o Azure Foundry."
         )
     except Exception as exc:
         raise HTTPException(
