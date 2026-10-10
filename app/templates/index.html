@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LuxeStay - Atendimento Virtual</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="h-full flex flex-col max-w-md mx-auto sm:max-w-2xl bg-white shadow-lg">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-gold-500">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-full bg-amber-600 flex items-center justify-center font-bold text-lg">
+                LS
+            </div>
+            <div>
+                <h1 class="font-semibold text-base leading-tight">LuxeStay Concierge</h1>
+                <p class="text-xs text-emerald-400 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span> Online
+                </p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Chat Area -->
+    <main id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+        <!-- Mensagem de Boas-Vindas -->
+        <div class="flex items-start space-x-2">
+            <div class="bg-white border border-gray-200 text-gray-800 p-3.5 rounded-2xl rounded-tl-none text-sm shadow-sm max-w-[85%]">
+                Olá! Seja bem-vindo ao <strong>Hotel LuxeStay</strong>. Como posso ajudar com a sua reserva ou estadia hoje?
+            </div>
+        </div>
+    </main>
+
+    <!-- Preview de Arquivo Selecionado -->
+    <div id="file-preview" class="hidden px-4 py-2 bg-gray-100 border-t flex items-center justify-between text-xs text-gray-600">
+        <span id="file-name" class="truncate max-w-[200px]"></span>
+        <button onclick="clearFile()" class="text-red-500 font-bold ml-2">✕</button>
+    </div>
+
+    <!-- Input Area -->
+    <footer class="p-3 bg-white border-t border-gray-200">
+        <form id="chat-form" onsubmit="sendMessage(event)" class="flex items-center gap-2">
+            
+            <!-- Upload Imagem / Áudio -->
+            <label for="file-input" class="p-2 text-gray-500 hover:text-amber-600 cursor-pointer rounded-full hover:bg-gray-100 transition">
+                <i class="fa-solid fa-paperclip text-lg"></i>
+            </label>
+            <input type="file" id="file-input" class="hidden" accept="image/*,audio/*" onchange="handleFileSelect(event)">
+
+            <!-- Input Texto -->
+            <input 
+                type="text" 
+                id="message-input" 
+                placeholder="Digite sua mensagem..." 
+                class="flex-1 bg-gray-100 text-gray-900 text-sm rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500 border-none"
+            />
+
+            <!-- Botão Enviar -->
+            <button 
+                type="submit" 
+                class="bg-amber-600 text-white p-2.5 rounded-full hover:bg-amber-700 transition flex items-center justify-center w-10 h-10 shadow-md">
+                <i class="fa-solid fa-paper-plane text-sm"></i>
+            </button>
+        </form>
+    </footer>
+
+    <!-- Script JS para interatividade -->
+    <script>
+        let selectedFile = null;
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                document.getElementById('file-name').innerText = `Anexo: ${file.name}`;
+                document.getElementById('file-preview').classList.remove('hidden');
+            }
+        }
+
+        function clearFile() {
+            selectedFile = null;
+            document.getElementById('file-input').value = '';
+            document.getElementById('file-preview').classList.add('hidden');
+        }
+
+        async function sendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+
+            if (!text && !selectedFile) return;
+
+            const chatMessages = document.getElementById('chat-messages');
+
+            // Renderiza mensagem do usuário
+            const userBubble = document.createElement('div');
+            userBubble.className = 'flex justify-end';
+            userBubble.innerHTML = `
+                <div class="bg-amber-600 text-white p-3.5 rounded-2xl rounded-tr-none text-sm max-w-[85%] shadow-sm">
+                    ${text ? `<p>\${text}</p>` : ''}
+                    ${selectedFile ? `<p class="italic text-xs mt-1 text-amber-200">📎 \${selectedFile.name}</p>` : ''}
+                </div>
+            `;
+            chatMessages.appendChild(userBubble);
+            
+            input.value = '';
+            const formData = new FormData();
+            formData.append('mensagem', text);
+            if (selectedFile) formData.append('arquivo', selectedFile);
+            
+            clearFile();
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            try {
+                const response = await fetch('/api/v1/chat', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                // Renderiza resposta da IA
+                const aiBubble = document.createElement('div');
+                aiBubble.className = 'flex items-start space-x-2';
+                aiBubble.innerHTML = `
+                    <div class="bg-white border border-gray-200 text-gray-800 p-3.5 rounded-2xl rounded-tl-none text-sm shadow-sm max-w-[85%]">
+                        ${response.ok ? data.resposta : `<span class="text-red-500">\${data.detail}</span>`}
+                    </div>
+                `;
+                chatMessages.appendChild(aiBubble);
+            } catch (err) {
+                const errBubble = document.createElement('div');
+                errBubble.className = 'flex items-start space-x-2';
+                errBubble.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 text-red-700 p-3.5 rounded-2xl rounded-tl-none text-sm shadow-sm max-w-[85%]">
+                        Erro ao conectar com o serviço do Hotel LuxeStay.
+                    </div>
+                `;
+                chatMessages.appendChild(errBubble);
+            }
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    </script>
+</body>
+</html>
