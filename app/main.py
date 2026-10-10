@@ -49,7 +49,7 @@ async def conversar_com_agente(
     if not mensagem and not arquivo:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Envie uma mensagem de texto ou ficheiro."
+            detail="Envie uma mensagem de texto ou arquivo."
         )
 
     if not HOTEL_AGENT_ENDPOINT or not HOTEL_AGENT_API_KEY:
@@ -58,6 +58,7 @@ async def conversar_com_agente(
             detail="HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY nao estao definidos no .env"
         )
 
+    # Cabeçalhos de autenticação do Azure AI Foundry / Agent Service
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
         "Authorization": f"Bearer {HOTEL_AGENT_API_KEY}",
@@ -66,9 +67,10 @@ async def conversar_com_agente(
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
+            # 1. Tentativa com payload de Responses API / Prompt
             payload = {
                 "input": mensagem or "Olá",
-                "stream": False
+                "messages": [{"role": "user", "content": mensagem or "Olá"}]
             }
 
             response = await client.post(
@@ -77,41 +79,39 @@ async def conversar_com_agente(
                 headers=headers
             )
 
-            if response.status_code == 400:
-                payload_fallback = {
-                    "messages": [{"role": "user", "content": mensagem or "Olá"}]
-                }
-                response = await client.post(
-                    HOTEL_AGENT_ENDPOINT,
-                    json=payload_fallback,
-                    headers=headers
-                )
-
+            # Tratamento de erro retornado pela API da Microsoft
             if response.status_code != 200:
+                # Retorna o erro exato do Azure para podermos ver na tela do chat
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Erro Azure ({response.status_code}): {response.text}"
+                    detail=f"Erro no Azure ({response.status_code}): {response.text}"
                 )
 
             res_json = response.json()
             
+            # Extração da resposta do Agente
             resposta_texto = None
             if "output" in res_json:
-                resposta_texto = res_json["output"]
-            elif "choices" in res_json:
+                if isinstance(res_json["output"], str):
+                    resposta_texto = res_json["output"]
+                elif isinstance(res_json["output"], list) and len(res_json["output"]) > 0:
+                    resposta_texto = str(res_json["output"][0])
+            elif "choices" in res_json and len(res_json["choices"]) > 0:
                 resposta_texto = res_json["choices"][0]["message"]["content"]
             elif "response" in res_json:
                 resposta_texto = res_json["response"]
             elif "message" in res_json:
                 resposta_texto = res_json["message"]
 
-            return {"resposta": resposta_texto or "Resposta recebida do LuxeStay."}
+            return {"resposta": resposta_texto or "Agente LuxeStay respondeu com sucesso."}
 
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Timeout na ligacao com o Azure Foundry."
+            detail="Tempo limite excedido na resposta do agente Azure."
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
