@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
 
-# Carrega o .env a partir do diretório raiz do projeto
 BASE_DIR = Path(__file__).resolve().parent.parent
 env_path = BASE_DIR / ".env"
 
@@ -29,7 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Caminho do ficheiro HTML
 HTML_PATH = Path(__file__).resolve().parent / "templates" / "index.html"
 
 if not HTML_PATH.exists():
@@ -37,7 +35,6 @@ if not HTML_PATH.exists():
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """Lê e retorna o HTML diretamente sem usar templates Jinja2."""
     if not HTML_PATH.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -64,13 +61,12 @@ async def conversar_com_agente(
             detail="HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY nao estao definidos no .env"
         )
 
-    # --- INJEÇÃO AUTOMÁTICA DA API-VERSION NO ENDPOINT ---
+    # Usa a versão oficial 2024-02-15-preview
     endpoint_url = HOTEL_AGENT_ENDPOINT
     if "api-version=" not in endpoint_url:
         delimiter = "&" if "?" in endpoint_url else "?"
-        endpoint_url = f"{endpoint_url}{delimiter}api-version=2024-05-01-preview"
+        endpoint_url = f"{endpoint_url}{delimiter}api-version=2024-02-15-preview"
 
-    # Cabeçalhos de autenticação do Azure AI Foundry / Agent Service
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
         "Authorization": f"Bearer {HOTEL_AGENT_API_KEY}",
@@ -98,7 +94,6 @@ async def conversar_com_agente(
 
             res_json = response.json()
             
-            # Extração da resposta do Agente
             resposta_texto = None
             if "output" in res_json:
                 if isinstance(res_json["output"], str):
