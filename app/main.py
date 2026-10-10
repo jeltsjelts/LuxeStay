@@ -1,14 +1,13 @@
 import os
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, status, Form, UploadFile, File, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, HTTPException, status, Form, UploadFile, File
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
 
-# Carrega as variáveis do .env na raiz
+# Carrega as variáveis do .env
 load_dotenv()
 
 HOTEL_AGENT_ENDPOINT = os.getenv("HOTEL_AGENT_ENDPOINT")
@@ -24,26 +23,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Caminho absoluto para a pasta templates evitar o erro 500 no Render
+# Descobre o caminho correto do arquivo HTML no container/servidor
 BASE_DIR = Path(__file__).resolve().parent
-templates_path = BASE_DIR / "templates"
+html_file_path = BASE_DIR / "templates" / "index.html"
 
-if not templates_path.exists():
-    # Fallback caso a estrutura esteja com app na raiz do container
-    templates_path = Path("app/templates")
+# Fallback de caminho caso a estrutura de pastas mude no Render
+if not html_file_path.exists():
+    html_file_path = Path("app/templates/index.html")
 
-templates = Jinja2Templates(directory=str(templates_path))
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """Renderiza a interface do Chat em Tailwind CSS."""
-    try:
-        return templates.TemplateResponse("index.html", {"request": request})
-    except Exception as e:
+@app.get("/", response_class=FileResponse)
+async def home():
+    """Serve a página HTML diretamente, eliminando incompatibilidades do Jinja2."""
+    if not html_file_path.exists():
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao carregar template HTML: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Arquivo HTML não encontrado no caminho: {html_file_path}"
         )
+    return FileResponse(html_file_path)
 
 @app.post("/api/v1/chat")
 async def conversar_com_agente(
@@ -62,7 +58,6 @@ async def conversar_com_agente(
             detail="Variáveis HOTEL_AGENT_ENDPOINT ou HOTEL_AGENT_API_KEY não foram encontradas no .env."
         )
 
-    # Autenticação para o Azure Foundry Responses API
     headers = {
         "api-key": HOTEL_AGENT_API_KEY,
         "Authorization": f"Bearer {HOTEL_AGENT_API_KEY}",
@@ -72,7 +67,7 @@ async def conversar_com_agente(
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
             
-            # Formato de payload compatível com Azure Agent Responses Protocol
+            # Payload para a API do Azure Foundry Responses
             payload = {
                 "input": mensagem or "Olá",
                 "stream": False
@@ -84,7 +79,7 @@ async def conversar_com_agente(
                 headers=headers
             )
 
-            # Caso a API de Agentes exija o formato clássico de messages como fallback
+            # Fallback para o formato 'messages' caso o endpoint exija
             if response.status_code == 400:
                 payload_fallback = {
                     "messages": [{"role": "user", "content": mensagem or "Olá"}]
@@ -103,7 +98,7 @@ async def conversar_com_agente(
 
             res_json = response.json()
             
-            # Mapeamento do retorno do Azure Responses API
+            # Extração flexível da resposta recebida
             resposta_texto = None
             if "output" in res_json:
                 resposta_texto = res_json["output"]
@@ -126,4 +121,3 @@ async def conversar_com_agente(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro interno: {str(exc)}"
         )
-
